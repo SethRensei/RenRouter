@@ -1,0 +1,22 @@
+{
+    "name": "sethrensei/ren-router",
+    "description": "Secure lightweight PHP router with RBAC, CSRF and HTTP error handling",
+    "require": {
+        "altorouter/altorouter": "^2.0",
+        "psr/log": "^3.0"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "RenRouter\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "SethRensei",
+            "email": "eddisethsita@proton.me"
+        }
+    ],
+    "minimum-stability": "stable",
+    "version": "1.0.0"
+}
