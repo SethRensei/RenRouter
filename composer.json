@@ -3,7 +3,9 @@
     "description": "Secure lightweight PHP router with RBAC, CSRF and HTTP error handling",
     "require": {
         "altorouter/altorouter": "^2.0",
-        "psr/log": "^3.0"
+        "psr/log": "^3.0",
+        "psr/http-message": "^2.0",
+        "psr/http-factory": "^1.1"
     },
     "license": "MIT",
     "autoload": {
