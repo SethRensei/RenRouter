@@ -3,3 +3,6 @@
 /.vscode/
 .env
 composer.lock
+/views/
+/public/
+/src/Controller/

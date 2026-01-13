@@ -5,8 +5,13 @@ namespace RenRouter;
 use AltoRouter;
 use Psr\Log\LoggerInterface;
 use Psr\Http\Message\ResponseInterface;
+use RenRouter\Http\Exception\HttpException;
+use RenRouter\Http\Exception\NotFoundHttpException;
 use RuntimeException;
 use InvalidArgumentException;
+use RenRouter\Http\Exception\ForbiddenHttpException;
+use RenRouter\Http\Exception\UnauthorizedHttpException;
+use RenRouter\Security\Auth;
 
 /**
  * Class Router
@@ -89,7 +94,8 @@ final class Router
         string $uri,
         string|callable $target,
         string $method = 'GET',
-        ?string $name = null
+        ?string $name = null,
+        ?array $options = null
     ): self {
         $method = strtoupper(trim($method));
 
@@ -97,7 +103,10 @@ final class Router
             throw new InvalidArgumentException('HTTP method cannot be empty.');
         }
 
-        $this->router->map($method, $uri, $target, $name);
+        $this->router->map($method, $uri, [
+            'target' => $target,
+            'options' => $options ?? []
+        ],  $name);
         return $this;
     }
 
@@ -113,15 +122,19 @@ final class Router
     {
         $match = $this->router->match();
 
-        if ($match === false) {
-            $this->respondNotFound();
-            return $this;
-        }
-
-        $target = $match['target'] ?? null;
-        $params = $match['params'] ?? [];
-
         try {
+            if ($match === false)
+                throw new NotFoundHttpException();
+            
+            $data = $match['target'];
+    
+            $target = $data['target'];
+            $options = $data['options'] ?? [];
+            $params = $match['params'] ?? [];
+            
+            // Autho
+            $this->authorize($options);
+
             if (is_callable($target)) {
                 $this->dispatchCallable($target, $params);
                 return $this;
@@ -284,45 +297,88 @@ final class Router
     }
 
     /**
-     * Sends a 404 Not Found response.
+     * Authorizes access based on authentication and role requirements.
+     *
+     * This method evaluates the provided options to determine whether
+     * the current user is authenticated and/or authorized to access
+     * a protected resource.
+     *
+     * Supported options:
+     * - 'auth'  (bool)          Requires the user to be authenticated.
+     * - 'roles' (array|string) Requires the user to have at least one of the given roles.
+     *
+     * @param array<string, mixed> $options Authorization configuration options.
+     *
+     * @throws UnauthorizedHttpException If authentication is required but the user is not authenticated.
+     * @throws ForbiddenHttpException    If role requirements are not met.
      *
      * @return void
      */
-    private function respondNotFound(): void
+    private function authorize(array $options): void
     {
-        http_response_code(404);
-        $this->logger?->warning('Route not found', [
-            'uri' => $_SERVER['REQUEST_URI'] ?? null,
-        ]);
-
-        $fallback = $this->viewsPath . DIRECTORY_SEPARATOR . '404.php';
-        if (is_file($fallback)) {
-            require $fallback;
-            return;
+        if (($options['auth'] ?? false) === true) {
+            if (!Auth::check())
+                throw new UnauthorizedHttpException();                
         }
 
-        echo '404 Not Found';
+        if (!empty($options['roles'])) {
+            $requiredRoles = (array) $options['roles'];
+            if (!Auth::hasAnyRole($requiredRoles)) {
+                throw new ForbiddenHttpException();
+            }
+        }
     }
 
     /**
-     * Handles internal exceptions and sends a 500 response.
+     * Handles all uncaught exceptions thrown during the routing process.
      *
-     * @param \Throwable $e
+     * This method logs the exception, determines the appropriate HTTP status code,
+     * sets the response headers, and renders an error response depending on the
+     * current environment configuration.
+     *
+     * In development mode, the exception message is displayed directly.
+     * In production mode, a dedicated error view is rendered when available,
+     * otherwise a generic error message is returned.
+     *
+     * @param \Throwable $e The thrown exception or error.
      *
      * @return void
      */
     private function handleException(\Throwable $e): void
     {
         $this->logger?->error('Router exception', ['exception' => $e]);
-
-        http_response_code(500);
-        $this->sendHeader('Content-Type', 'text/plain; charset=UTF-8');
-
-        if ((bool) ini_get('display_errors')) {
-            echo 'Internal Server Error: ' . $e->getMessage();
-        } else {
-            echo 'Internal Server Error';
+        
+        if ($e instanceof HttpException) {
+            http_response_code($e->getStatusCode());
+            $errorMessage = $e->getMessage();
         }
+        else {
+            http_response_code(500);
+            $errorMessage = 'Internal Server Error';
+        }
+
+        $this->sendHeader('Content-Type', 'text/html; charset=UTF-8');
+        
+        // Display message in DEV MODE
+        if ((bool) ini_get('display_errors')) {
+            $this->sendHeader('Content-Type', 'text/plain; charset=UTF-8');
+            echo $e->getMessage();
+            return;
+        }
+
+        $code = http_response_code();
+        $view = $this->viewsPath . DIRECTORY_SEPARATOR . "errors" . DIRECTORY_SEPARATOR . "{$code}.php";
+
+        // Inject router and exception variables into the error view
+        $router = $this;
+        $exception = $e;
+
+        if (is_file($view) && is_readable($view)) {
+            require $view;
+            return;
+        }
+
+        echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8');
     }
 
     /**
