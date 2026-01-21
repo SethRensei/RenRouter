@@ -140,7 +140,7 @@ final class Request
      */
     public function file(string $key): ?UploadedFile
     {
-        if (!isset($this->files[$key])) {
+        if (!isset($this->files[$key]) || $this->files[$key]['error'] === UPLOAD_ERR_NO_FILE) {
             return null;
         }
 
