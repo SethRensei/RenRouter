@@ -125,7 +125,7 @@ final class UploadedFile
             mkdir($directory, 0775, true);
         }
 
-        $filename = $name
+        $filename = $name . '.' . $this->extension()
             ?? uniqid('upload_', true) . '.' . $this->extension();
 
         $path = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $filename;
