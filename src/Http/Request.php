@@ -138,13 +138,13 @@ final class Request
      * @param string $key
      * @return UploadedFile|null
      */
-    public function file(string $key): ?UploadedFile
+    public function file(string $key, int $maxSize = 2_000_000): ?UploadedFile
     {
         if (!isset($this->files[$key]) || $this->files[$key]['error'] === UPLOAD_ERR_NO_FILE) {
             return null;
         }
 
-        return new UploadedFile($this->files[$key]);
+        return new UploadedFile($this->files[$key], $maxSize);
     }
 
     /**
