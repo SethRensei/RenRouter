@@ -22,7 +22,7 @@ final class UploadedFile
     /**
      * Maximum allowed file size (bytes).
      */
-    private const MAX_SIZE = 2_000_000;
+    private int $max_size;
 
     /**
      * Allowed MIME types.
@@ -43,13 +43,14 @@ final class UploadedFile
      * @param array $file Raw $_FILES entry
      * @throws RuntimeException
      */
-    public function __construct(array $file)
+    public function __construct(array $file, int $max_size = 2_000_000)
     {
         if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
             throw new RuntimeException('File upload error.');
         }
 
         $this->file = $file;
+        $this->max_size = $max_size;
     }
 
     /**
@@ -83,6 +84,18 @@ final class UploadedFile
     }
 
     /**
+     * Sets the maximum allowed file size.
+     *
+     * @param int $size
+     * @return $this
+     */
+    public function setMaxSize(int $size): self
+    {
+        $this->max_size = $size;
+        return $this;
+    }
+
+    /**
      * Returns the file extension.
      *
      * @return string
@@ -99,7 +112,7 @@ final class UploadedFile
      */
     public function validate(): void
     {
-        if ($this->size() > self::MAX_SIZE) {
+        if ($this->size() > $this->max_size) {
             throw new RuntimeException('File size exceeds the allowed limit.');
         }
 
