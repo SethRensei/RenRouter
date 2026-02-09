@@ -186,7 +186,10 @@ final class Router
                 'params' => $params,
                 'exception' => $e,
             ]);
-            return $baseUrl . '/';
+            throw new RuntimeException(
+                "Route '{$name}' not found.",
+                previous: $e
+            );
         }
 
         return $baseUrl . '/' . ltrim($path, '/');
