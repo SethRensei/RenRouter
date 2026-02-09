@@ -24,6 +24,11 @@ final class Auth
         return isset($_SESSION['user']);
     }
 
+    public static function user(): ?array
+    {
+        return $_SESSION['user'] ?? null;
+    }
+
     /**
      * Retrieves all roles assigned to the authenticated user.
      *

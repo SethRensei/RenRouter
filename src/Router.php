@@ -359,6 +359,11 @@ final class Router
         }
     }
 
+    public function getSecurityRouteName(): string
+    {
+        return $this->securityRouteName;
+    }
+
 
     /**
      * Handles all uncaught exceptions thrown during the routing process.
