@@ -38,6 +38,8 @@ final class Router
      */
     private string $viewsPath;
 
+    private string $securityRouteName;
+
     /**
      * Internal router engine (AltoRouter).
      *
@@ -64,7 +66,8 @@ final class Router
     public function __construct(
         string $viewsPath,
         ?AltoRouter $router = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?string $securityRouteName = null
     ) {
         $this->viewsPath = rtrim($viewsPath, DIRECTORY_SEPARATOR);
 
@@ -76,6 +79,7 @@ final class Router
 
         $this->router = $router ?? new AltoRouter();
         $this->logger = $logger;
+        $this->securityRouteName = $securityRouteName ?? $this->getDefaultSecurityRouteName();
     }
 
     /**
@@ -106,7 +110,7 @@ final class Router
         $this->router->map($method, $uri, [
             'target' => $target,
             'options' => $options ?? []
-        ],  $name);
+        ], $name);
         return $this;
     }
 
@@ -125,13 +129,13 @@ final class Router
         try {
             if ($match === false)
                 throw new NotFoundHttpException();
-            
+
             $data = $match['target'];
-    
+
             $target = $data['target'];
             $options = $data['options'] ?? [];
             $params = $match['params'] ?? [];
-            
+
             // Autho
             $this->authorize($options);
 
@@ -317,8 +321,18 @@ final class Router
     private function authorize(array $options): void
     {
         if (($options['auth'] ?? false) === true) {
-            if (!Auth::check())
-                throw new UnauthorizedHttpException();                
+            if (!Auth::check()) {
+                $routeName = $this->securityRouteName ?? $this->getDefaultSecurityRouteName();
+
+                if (!$this->hasRoute($routeName)) {
+                    throw new UnauthorizedHttpException(
+                        "Access denied. Authentication required but no security route defined."
+                    );
+                }
+
+                header('Location: ' . $this->url($routeName));
+                exit;
+            }
         }
 
         if (!empty($options['roles'])) {
@@ -328,6 +342,20 @@ final class Router
             }
         }
     }
+
+    /**
+     * Checks whether a named route exists.
+     */
+    public function hasRoute(string $name): bool
+    {
+        try {
+            $this->router->generate($name);
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
 
     /**
      * Handles all uncaught exceptions thrown during the routing process.
@@ -347,18 +375,17 @@ final class Router
     private function handleException(\Throwable $e): void
     {
         $this->logger?->error('Router exception', ['exception' => $e]);
-        
+
         if ($e instanceof HttpException) {
             http_response_code($e->getStatusCode());
             $errorMessage = $e->getMessage();
-        }
-        else {
+        } else {
             http_response_code(500);
             $errorMessage = 'Internal Server Error';
         }
 
         $this->sendHeader('Content-Type', 'text/html; charset=UTF-8');
-        
+
         // Display message in DEV MODE
         if ((bool) ini_get('display_errors')) {
             $this->sendHeader('Content-Type', 'text/plain; charset=UTF-8');
@@ -433,5 +460,14 @@ final class Router
     {
         $baseUrl = $_ENV['APP_URL'] ?? '';
         return rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
+    }
+
+    /**
+     * Get teh default security route name.
+     * @return string The default security route name 'security.login'
+     */
+    private function getDefaultSecurityRouteName(): string
+    {
+        return 'security.login';
     }
 }
