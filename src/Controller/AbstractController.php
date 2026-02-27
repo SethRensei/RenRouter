@@ -36,7 +36,7 @@ abstract class AbstractController
     protected function requireRole(Router $router, string|array $roles): void
     {
         $this->requireAuth($router);
-
+        $_SESSION['required_roles'] = (array) $roles; // Store required roles in session for error page access
         if (!Auth::hasAnyRole((array) $roles)) {
             throw new ForbiddenHttpException();
         }

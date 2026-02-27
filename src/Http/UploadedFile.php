@@ -122,6 +122,16 @@ final class UploadedFile
     }
 
     /**
+     * Checks if the file size is within the allowed limit.
+     *
+     * @return bool True if file size is acceptable, false otherwise
+     */
+    public function isGoodSize(): bool
+    {
+        return $this->size() <= $this->max_size;
+    }
+
+    /**
      * Moves the uploaded file to the given directory.
      *
      * @param string $directory
