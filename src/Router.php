@@ -145,7 +145,7 @@ final class Router
             }
 
             if (is_string($target)) {
-                $this->renderView($target);
+                $this->render($target);
                 return $this;
             }
 
@@ -195,6 +195,38 @@ final class Router
         return $baseUrl . '/' . ltrim($path, '/');
     }
 
+    /**
+     * Redirects to a specific route by its name.
+     *
+     * @param string $routeName The name of the route to redirect to.
+     * @param array  $params    Optional associative array of parameters to build the URL.
+     * @param int    $status    The HTTP response status code (default: 302 Found).
+     * 
+     * @return void
+     */
+    public function redirect(string $routeName, array $params = [], int $status = 302): void
+    {
+        $this->redirectUrl($this->url($routeName, $params), $status);
+    }
+
+    /**
+     * Sends a raw HTTP Location header to perform a redirect.
+     * 
+     * This method checks if headers have already been sent to avoid PHP warnings.
+     *
+     * @param string $url    The absolute or relative URL to redirect to.
+     * @param int    $status The HTTP response status code (default: 302 Found).
+     * 
+     * @return void
+     */
+    private function redirectUrl(string $url, int $status = 302): void
+    {
+        if (!headers_sent()) {
+            http_response_code($status);
+            header('Location: ' . $url);
+        }
+    }
+
     /* =========================
        Internal dispatch helpers
        ========================= */
@@ -219,39 +251,6 @@ final class Router
         if (is_string($result)) {
             echo $result;
         }
-    }
-
-    /**
-     * Renders a view with optional layout handling.
-     *
-     * @param string $view View name
-     *
-     * @return void
-     */
-    private function renderView(string $view): void
-    {
-        $viewFile = $this->resolveViewPath($view);
-        $isAjax = $this->isAjaxRequest();
-
-        // Inject router into view scope
-        $router = $this;
-
-        if ($isAjax) {
-            $this->sendHeader('Content-Type', 'text/html; charset=UTF-8');
-            require $viewFile;
-            return;
-        }
-
-        ob_start();
-        require $viewFile;
-        $pg_content = (string) ob_get_clean();
-
-        $baseFile = $this->viewsPath . DIRECTORY_SEPARATOR . 'base.php';
-        if (!is_file($baseFile) || !is_readable($baseFile)) {
-            throw new RuntimeException("Base layout not found.");
-        }
-
-        require $baseFile;
     }
 
     /**
@@ -341,7 +340,10 @@ final class Router
         if (!empty($options['roles'])) {
             $requiredRoles = (array) $options['roles'];
             if (!Auth::hasAnyRole($requiredRoles)) {
-                throw new ForbiddenHttpException();
+                throw new ForbiddenHttpException( 
+                    'Access denied. Insufficient permissions.',
+                    requiredRoles: $requiredRoles
+                );
             }
         }
     }

@@ -14,8 +14,16 @@ final class UnauthorizedHttpException extends HttpException
     /**
      * @param string $message Error message indicating missing authentication.
      */
-    public function __construct(string $message = 'Authentication required')
+    public function __construct(
+        string $message = 'Authentication required',
+        private ?string $redirectTo = null
+        )
     {
         parent::__construct(401, $message);
+    }
+
+    public function getRedirectTo(): ?string
+    {
+        return $this->redirectTo;
     }
 }

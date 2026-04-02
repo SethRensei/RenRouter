@@ -144,9 +144,8 @@ final class UploadedFile
     {
         $this->validate();
 
-        if (!is_dir($directory)) {
+        if (!is_dir($directory))
             mkdir($directory, 0775, true);
-        }
 
         $filename = $name . '.' . $this->extension()
             ?? uniqid('upload_', true) . '.' . $this->extension();
