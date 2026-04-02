@@ -8,24 +8,19 @@ use RenRouter\Http\Exception\ForbiddenHttpException;
 use RenRouter\Http\Exception\UnauthorizedHttpException;
 
 abstract class AbstractController
-{
-
-    public function __construct(
-        protected Router $router
-    ) { }
-    
+{    
     /**
      * Require authentication for the current action.
      */
-    protected function requireAuth(): void
+    protected function requireAuth(Router $router): void
     {
         if (Auth::check()) {
             return;
         }
 
-        $routeName = $this->router->getSecurityRouteName();
+        $routeName = $router->getSecurityRouteName();
 
-        if (!$this->router->hasRoute($routeName)) {
+        if (!$router->hasRoute($routeName)) {
             throw new UnauthorizedHttpException(
                 'Access denied. Authentication required.'
             );
@@ -33,16 +28,16 @@ abstract class AbstractController
 
         throw new UnauthorizedHttpException(
             'Authentication required.',
-            redirectTo: $this->router->url($routeName)
+            redirectTo: $router->url($routeName)
         );
     }
 
     /**
      * Require at least one role.
      */
-    protected function requireRole(string|array $roles): void
+    protected function requireRole(Router $router, string|array $roles): void
     {
-        $this->requireAuth();
+        $this->requireAuth($router);
         // $_SESSION['required_roles'] = (array) $roles; // Store required roles in session for error page access
         if (!Auth::hasAnyRole((array) $roles)) {
             throw new ForbiddenHttpException(
