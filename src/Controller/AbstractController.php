@@ -31,8 +31,10 @@ abstract class AbstractController
             );
         }
 
-        header('Location: ' . $this->router->url($routeName));
-        exit;
+        throw new UnauthorizedHttpException(
+            'Authentication required.',
+            redirectTo: $this->router->url($routeName)
+        );
     }
 
     /**

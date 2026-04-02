@@ -31,28 +31,17 @@ use RenRouter\Security\Auth;
  */
 final class Router
 {
-    /**
-     * Absolute path to the views directory.
-     *
-     * @var string
-     */
     private string $viewsPath;
-
     private string $securityRouteName;
-
-    /**
-     * Internal router engine (AltoRouter).
-     *
-     * @var AltoRouter
-     */
     private AltoRouter $router;
-
-    /**
-     * Optional PSR-3 logger.
-     *
-     * @var LoggerInterface|null
-     */
     private ?LoggerInterface $logger;
+
+    private array $errorRoutes = [
+        401 => null,
+        403 => null,
+        404 => null,
+        500 => null,
+    ];
 
     /**
      * Router constructor.
@@ -386,36 +375,54 @@ final class Router
     {
         $this->logger?->error('Router exception', ['exception' => $e]);
 
-        if ($e instanceof HttpException) {
-            http_response_code($e->getStatusCode());
-            $errorMessage = $e->getMessage();
-        } else {
-            http_response_code(500);
-            $errorMessage = 'Internal Server Error';
+        if ($e instanceof UnauthorizedHttpException && $e->getRedirectTo()) {
+            $this->redirectUrl($e->getRedirectTo());
+            return;
         }
+
+        $code = ($e instanceof HttpException)
+            ? $e->getStatusCode()
+            : 500;
+
+        http_response_code($code);
+
+        $isDev = ($_ENV['APP_ENV'] ?? 'PROD') === 'DEV';
 
         $this->sendHeader('Content-Type', 'text/html; charset=UTF-8');
 
         // Display message in DEV MODE
-        if ((bool) ini_get('display_errors')) {
-            $this->sendHeader('Content-Type', 'text/plain; charset=UTF-8');
+        if ($isDev) {
+            header('Content-Type: text/plain; charset=UTF-8');
             echo $e->getMessage();
             return;
         }
 
-        $code = http_response_code();
         $view = $this->viewsPath . DIRECTORY_SEPARATOR . "errors" . DIRECTORY_SEPARATOR . "{$code}.php";
 
-        // Inject router and exception variables into the error view
-        $router = $this;
-        $exception = $e;
-
         if (is_file($view) && is_readable($view)) {
+            $router = $this;
+            $exception = $e;
             require $view;
             return;
         }
 
-        echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8');
+        try {
+            if ($this->hasRoute('home.app')) {
+                $this->redirect('home.app');
+            } else {
+                // fallback très basique si aucune route nommée 'home'
+                $this->redirectUrl('/');
+            }
+            return;
+        } catch (\Throwable) {
+            // 3) Dernier fallback : message texte simple
+            header('Content-Type: text/html; charset=UTF-8');
+            echo htmlspecialchars(
+                $e instanceof HttpException ? $e->getMessage() : 'Internal Server Error',
+                ENT_QUOTES,
+                'UTF-8'
+            );
+        }
     }
 
     /**
@@ -479,5 +486,11 @@ final class Router
     private function getDefaultSecurityRouteName(): string
     {
         return 'security.login';
+    }
+
+    public function setErrorRoute(int $code, string $routeName): self
+    {
+        $this->errorRoutes[$code] = $routeName;
+        return $this;
     }
 }
