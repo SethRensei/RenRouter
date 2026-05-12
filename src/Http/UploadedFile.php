@@ -29,7 +29,7 @@ final class UploadedFile
      *
      * @var string[]
      */
-    private const ALLOWED_MIME = [
+    private array $allowed_mime = [
         'image/jpeg',
         'image/gif',
         'image/png',
@@ -77,17 +77,30 @@ final class UploadedFile
      * Detects the real MIME type of the file.
      *
      * @return string
-     */
-    public function mimeType(): string
+     */    
+    private function mimeType(): string
     {
-        return mime_content_type($this->file['tmp_name']);
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        return (string) $finfo->file($this->file['tmp_name']);
+    }
+
+
+    /**
+     * Summary of setMineTypes
+     * @param array $types Allowed MIME types
+     * @return UploadedFile
+     */
+    public function setMimeTypes(array $types): self
+    {
+        $this->allowed_mime = array_values($types);
+        return $this;
     }
 
     /**
      * Sets the maximum allowed file size.
      *
      * @param int $size
-     * @return $this
+     * @return self
      */
     public function setMaxSize(int $size): self
     {
@@ -116,8 +129,9 @@ final class UploadedFile
             throw new RuntimeException('File size exceeds the allowed limit.');
         }
 
-        if (!in_array($this->mimeType(), self::ALLOWED_MIME, true)) {
-            throw new RuntimeException('Unsupported file type.');
+        $mime = $this->mimeType();
+        if (!in_array($mime, $this->allowed_mime, true)) {
+            throw new RuntimeException('Unsupported MIME type: ' . $mime, 415);
         }
     }
 
@@ -147,8 +161,9 @@ final class UploadedFile
         if (!is_dir($directory))
             mkdir($directory, 0775, true);
 
-        $filename = $name . '.' . $this->extension()
-            ?? uniqid('upload_', true) . '.' . $this->extension();
+        $filename = $name !== null
+            ? sanitizeName($name) . '.' . $this->extension()
+            : uniqid('upload_', true) . '.' . $this->extension();
 
         $path = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $filename;
 

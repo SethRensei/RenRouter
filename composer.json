@@ -15,7 +15,8 @@
             "RenRouter\\": "src/"
         },
         "files": [
-            "src/bootstrap_env.php"
+            "src/bootstrap_env.php",
+            "src/Utility/function.php"
         ]
     },
     "authors": [
@@ -25,5 +26,5 @@
         }
     ],
     "minimum-stability": "stable",
-    "version": "1.0.3"
+    "version": "1.0.4"
 }

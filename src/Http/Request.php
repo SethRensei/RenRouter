@@ -2,6 +2,8 @@
 declare(strict_types=1);
 namespace RenRouter\Http;
 
+use RuntimeException;
+
 /**
  * Class Request
  *
@@ -78,6 +80,14 @@ final class Request
     }
 
     /**
+     * GET request check.
+     */
+    public function isGet(): bool
+    {
+        return $this->method() === 'GET';
+    }
+
+    /**
      * Returns the request URI without query parameters.
      *
      * @return string
@@ -85,6 +95,16 @@ final class Request
     public function uri(): string
     {
         return strtok($this->server['REQUEST_URI'] ?? '/', '?');
+    }
+
+    /**
+     * Check HTTPS.
+     */
+    public function isSecure(): bool
+    {
+        return (
+            $this->server['HTTPS'] ?? 'off'
+        ) !== 'off';
     }
 
     /**
@@ -109,6 +129,22 @@ final class Request
         return $this->post[$key]
             ?? $this->get[$key]
             ?? $default;
+    }
+
+    /**
+     * POST input only.
+     */
+    public function post(string $key, mixed $default = null): mixed
+    {
+        return $this->post[$key] ?? $default;
+    }
+
+    /**
+     * GET query only.
+     */
+    public function query(string $key, mixed $default = null): mixed
+    {
+        return $this->get[$key] ?? $default;
     }
 
     /**
@@ -155,5 +191,63 @@ final class Request
     public function files(): array
     {
         return $this->files;
+    }
+
+    /**
+     * Get request header.
+     */
+    public function header(
+        string $key,
+        mixed $default = null
+    ): mixed {
+        $header = 'HTTP_' . strtoupper(
+            str_replace('-', '_', $key)
+        );
+
+        return $this->server[$header] ?? $default;
+    }
+
+    /**
+     * Get server value.
+     */
+    public function server(
+        string $key,
+        mixed $default = null
+    ): mixed {
+        return $this->server[$key] ?? $default;
+    }
+
+    /**
+     * Get cookie value.
+     */
+    public function cookie(
+        string $key,
+        mixed $default = null
+    ): mixed {
+        return $this->cookies[$key] ?? $default;
+    }
+
+    /**
+     * Parse JSON request body.
+     *
+     * @return array<string, mixed>
+     */
+    public function json(): array
+    {
+        $content = file_get_contents('php://input');
+
+        if ($content === false || $content === '') {
+            return [];
+        }
+
+        $decoded = json_decode($content, true);
+
+        if (!is_array($decoded)) {
+            throw new RuntimeException(
+                'Invalid JSON payload.'
+            );
+        }
+
+        return $decoded;
     }
 }
