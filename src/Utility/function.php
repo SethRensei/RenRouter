@@ -17,7 +17,7 @@ function clean(?string $s): ?string
  * @param mixed $s The string to be uncleaned.
  * @return string|null The uncleaned and unsanitized string, or null if input is null.
  */
-function unclean(mixed $s)
+function unClean(mixed $s)
 {
     if ($s === null)
         return null;
