@@ -63,10 +63,10 @@ function getFirstWords(?string $content, int $limit = 2): string
  * @param string|null $name The original name
  * @return string|null The cleaned name
  */
-function sanitizeName(string|null $name): ?string
+function sanitizeName(string|null $name, string $replace = '_'): ?string
 {
     if ($name == null)
         return null;
-    $name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $name);
-    return trim($name, '_');
+    $name = preg_replace('/[^a-zA-Z0-9_-]/', $replace, $name);
+    return trim($name, $replace);
 }
