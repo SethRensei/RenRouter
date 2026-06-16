@@ -26,20 +26,21 @@ final class UploadedFile
     private int $max_size;
 
     /**
-     * Allowed MIME types.
+     * Allowed MIME types mapped to their accepted extensions.
+     * Both the MIME type AND the extension must match for the file to be accepted.
      *
-     * @var string[]
+     * @var array<string, string[]>
      */
     private array $allowed_mime = [
-        'image/jpeg',
-        'image/gif',
-        'image/png',
-        'image/webp',
-        'application/pdf',
-        'application/msword', // .doc
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-        'application/vnd.ms-excel', // .xls
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // .xlsx
+        'image/jpeg' => ['jpg', 'jpeg'],
+        'image/gif' => ['gif'],
+        'image/png' => ['png'],
+        'image/webp' => ['webp'],
+        'application/pdf' => ['pdf'],
+        'application/msword' => ['doc'],                                                        // .doc
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => ['docx'], // .docx
+        'application/vnd.ms-excel' => ['xls'],  // .xls
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => ['xlsx'], // .xlsx
     ];
 
     /**
@@ -144,14 +145,13 @@ final class UploadedFile
     // -------------------------------------------------------------------------
 
     /**
-     * Replaces the list of allowed MIME types.
+     * Replaces the allowed MIME → extensions map.
      *
-     * @param string[] $types
-     * @return UploadedFile
+     * @param array<string, string[]> $types  e.g. ['image/png' => ['png']]
      */
     public function setMimeTypes(array $types): self
     {
-        $this->allowed_mime = array_values($types);
+        $this->allowed_mime = $types;
         return $this;
     }
 
@@ -176,6 +176,8 @@ final class UploadedFile
      *
      * Example:
      *   $file->setSizeMessage('The file ({{ actual }}) is too large. Limit: {{ limit }}.');
+     * 
+     * @return UploadedFile
      */
     public function setSizeMessage(string $message): self
     {
@@ -184,14 +186,17 @@ final class UploadedFile
     }
 
     /**
-     * Defines a custom error message for MIME type violations.
+     * Defines a custom error message for MIME type / extension violations.
      *
      * Available placeholders:
      *   {{ mimeType }} → detected MIME type          (e.g. "application/zip")
-     *   {{ allowed }}  → comma-separated allowed list
+     *   {{ allowed }}  → comma-separated MIME list
+     *   {{ ext }}      → submitted file extension    (e.g. ".zip")
      *
      * Example:
-     *   $file->setMimeMessage('"{{ mimeType }}" is not accepted. Use: {{ allowed }}.');
+     *   $file->setMimeMessage('"{{ mimeType }}"{{ ext }} is not accepted. Try: {{ allowed }}.');
+     * 
+     * @return UploadedFile
      */
     public function setMimeMessage(string $message): self
     {
@@ -212,21 +217,32 @@ final class UploadedFile
     }
 
     /**
-     * Returns true when the MIME type is in the allowed list.
+     * Returns true when both the detected MIME type and the file extension
+     * are consistent with the allowed map.
+     *
+     * This double-check prevents ambiguous cases such as .docx files being
+     * detected as application/zip by finfo (both share PK magic bytes).
      */
     public function isValidMime(): bool
     {
-        return in_array($this->mimeType(), $this->allowed_mime, true);
+        $mime = $this->mimeType();
+        $ext  = $this->extension();
+ 
+        if (!isset($this->allowed_mime[$mime])) {
+            return false;
+        }
+ 
+        return in_array($ext, $this->allowed_mime[$mime], true);
     }
 
     /**
-     * Validates size and MIME type, throwing a typed exception for each failure.
+     * Validates size and MIME type+extension, throwing a typed exception on failure.
      *
      * Custom messages can be set beforehand via setSizeMessage() / setMimeMessage().
      *
      * ```php
      * $file->setSizeMessage('File too big ({{ actual }}). Max: {{ limit }}.')
-     *      ->setMimeMessage('"{{ mimeType }}" not allowed. Try: {{ allowed }}.')
+     *      ->setMimeMessage('"{{ mimeType }}"{{ ext }} not allowed. Try: {{ allowed }}.')
      *      ->validate();
      * ```
      *
@@ -235,14 +251,14 @@ final class UploadedFile
      * try {
      *     $file->validate();
      * } catch (FileSizeException $e) {
-     *     // e.g. ask the user to compress the file
+     *     // ask the user to compress the file
      * } catch (FileMimeTypeException $e) {
-     *     // e.g. display accepted formats
+     *     // display accepted formats
      * }
      * ```
      *
      * @throws FileSizeException     When the file exceeds the size limit.
-     * @throws FileMimeTypeException When the MIME type is not allowed.
+     * @throws FileMimeTypeException When the MIME type or extension is not allowed.
      */
     public function validate(): void
     {
@@ -255,7 +271,11 @@ final class UploadedFile
         }
 
         if (!$this->isValidMime()) {
-            $args = [$this->mimeType(), $this->allowed_mime];
+            $args = [
+                $this->mimeType(),
+                array_keys($this->allowed_mime),
+                $this->extension()
+            ];
             if ($this->mime_message !== null) {
                 $args[] = $this->mime_message;
             }
