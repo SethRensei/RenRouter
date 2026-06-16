@@ -129,6 +129,11 @@ final class UploadedFile
         return strtolower(pathinfo($this->file['name'], PATHINFO_EXTENSION));
     }
 
+    public function allowedExtensions(): array
+    {
+        return array_merge(...array_values($this->allowed_mime));
+    }
+
     /**
      * Detects the real MIME type of the file.
      *
@@ -274,7 +279,8 @@ final class UploadedFile
             $args = [
                 $this->mimeType(),
                 array_keys($this->allowed_mime),
-                $this->extension()
+                $this->extension(),
+                $this->allowedExtensions(),
             ];
             if ($this->mime_message !== null) {
                 $args[] = $this->mime_message;
