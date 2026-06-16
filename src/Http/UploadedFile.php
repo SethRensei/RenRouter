@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace RenRouter\Http;
 
+use RenRouter\Exception\{FileMimeTypeException, FileSizeException};
 use RuntimeException;
 
 /**
@@ -42,20 +43,60 @@ final class UploadedFile
     ];
 
     /**
-     * UploadedFile constructor.
+     * Custom message for FileSizeException.
+     * Placeholders: {{ limit }}, {{ actual }}
+     */
+    private ?string $size_message = null;
+
+    /**
+     * Custom message for FileMimeTypeException.
+     * Placeholders: {{ mimeType }}, {{ allowed }}
+     */
+    private ?string $mime_message = null;
+
+    /**
+     * Human-readable PHP upload error messages.
+     * @var array<int, string>
+     */
+    private const UPLOAD_ERRORS = [
+        UPLOAD_ERR_INI_SIZE => 'File exceeds the upload_max_filesize directive in php.ini.',
+        UPLOAD_ERR_FORM_SIZE => 'File exceeds the MAX_FILE_SIZE directive in the HTML form.',
+        UPLOAD_ERR_PARTIAL => 'File was only partially uploaded.',
+        UPLOAD_ERR_NO_FILE => 'No file was uploaded.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder.',
+        UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk.',
+        UPLOAD_ERR_EXTENSION => 'A PHP extension stopped the file upload.',
+    ];
+
+    /**
+     * @param array<string, mixed> $file     Raw $_FILES entry.
+     * @param int                  $max_size Maximum allowed size in bytes (default 2 MB).
      *
-     * @param array $file Raw $_FILES entry
-     * @throws RuntimeException
+     * @throws RuntimeException On any PHP upload error.
      */
     public function __construct(array $file, int $max_size = 2_000_000)
     {
-        if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('File upload error.');
+        if (!isset($file['error'])) {
+            throw new RuntimeException('Invalid $_FILES entry: missing error key.');
+        }
+
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $message = self::UPLOAD_ERRORS[$file['error']]
+                ?? 'Unknown upload error (code ' . $file['error'] . ').';
+            throw new RuntimeException($message);
+        }
+
+        if (!is_uploaded_file($file['tmp_name'])) {
+            throw new RuntimeException('Security violation: file was not uploaded via HTTP POST.');
         }
 
         $this->file = $file;
         $this->max_size = $max_size;
     }
+
+    // -------------------------------------------------------------------------
+    // Accessors
+    // -------------------------------------------------------------------------
 
     /**
      * Returns the original file name.
@@ -78,6 +119,16 @@ final class UploadedFile
     }
 
     /**
+     * Returns the file extension.
+     *
+     * @return string
+     */
+    public function extension(): string
+    {
+        return strtolower(pathinfo($this->file['name'], PATHINFO_EXTENSION));
+    }
+
+    /**
      * Detects the real MIME type of the file.
      *
      * @return string
@@ -88,10 +139,14 @@ final class UploadedFile
         return (string) $finfo->file($this->file['tmp_name']);
     }
 
+    // -------------------------------------------------------------------------
+    // Fluent configuration
+    // -------------------------------------------------------------------------
 
     /**
-     * Summary of setMineTypes
-     * @param array $types Allowed MIME types
+     * Replaces the list of allowed MIME types.
+     *
+     * @param string[] $types
      * @return UploadedFile
      */
     public function setMimeTypes(array $types): self
@@ -113,68 +168,151 @@ final class UploadedFile
     }
 
     /**
-     * Returns the file extension.
+     * Defines a custom error message for size violations.
      *
-     * @return string
+     * Available placeholders:
+     *   {{ limit }}  → human-readable max size  (e.g. "2 MB")
+     *   {{ actual }} → human-readable file size (e.g. "5.2 MB")
+     *
+     * Example:
+     *   $file->setSizeMessage('The file ({{ actual }}) is too large. Limit: {{ limit }}.');
      */
-    public function extension(): string
+    public function setSizeMessage(string $message): self
     {
-        return strtolower(pathinfo($this->file['name'], PATHINFO_EXTENSION));
+        $this->size_message = $message;
+        return $this;
     }
 
     /**
-     * Validates file size and MIME type.
+     * Defines a custom error message for MIME type violations.
      *
-     * @throws RuntimeException
+     * Available placeholders:
+     *   {{ mimeType }} → detected MIME type          (e.g. "application/zip")
+     *   {{ allowed }}  → comma-separated allowed list
+     *
+     * Example:
+     *   $file->setMimeMessage('"{{ mimeType }}" is not accepted. Use: {{ allowed }}.');
      */
-    public function validate(): void
+    public function setMimeMessage(string $message): self
     {
-        if ($this->size() > $this->max_size) {
-            throw new RuntimeException('File size exceeds the allowed limit.');
-        }
-
-        $mime = $this->mimeType();
-        if (!in_array($mime, $this->allowed_mime, true)) {
-            throw new RuntimeException('Unsupported MIME type: ' . $mime, 415);
-        }
+        $this->mime_message = $message;
+        return $this;
     }
 
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
+
     /**
-     * Checks if the file size is within the allowed limit.
-     *
-     * @return bool True if file size is acceptable, false otherwise
+     * Returns true when the file size is within the allowed limit.
      */
-    public function isGoodSize(): bool
+    public function isValidSize(): bool
     {
         return $this->size() <= $this->max_size;
     }
 
     /**
-     * Moves the uploaded file to the given directory.
+     * Returns true when the MIME type is in the allowed list.
+     */
+    public function isValidMime(): bool
+    {
+        return in_array($this->mimeType(), $this->allowed_mime, true);
+    }
+
+    /**
+     * Validates size and MIME type, throwing a typed exception for each failure.
      *
-     * @param string $directory
-     * @param string|null $name Custom filename
-     * @return string Final filename
+     * Custom messages can be set beforehand via setSizeMessage() / setMimeMessage().
      *
-     * @throws RuntimeException
+     * ```php
+     * $file->setSizeMessage('File too big ({{ actual }}). Max: {{ limit }}.')
+     *      ->setMimeMessage('"{{ mimeType }}" not allowed. Try: {{ allowed }}.')
+     *      ->validate();
+     * ```
+     *
+     * Catching them separately:
+     * ```php
+     * try {
+     *     $file->validate();
+     * } catch (FileSizeException $e) {
+     *     // e.g. ask the user to compress the file
+     * } catch (FileMimeTypeException $e) {
+     *     // e.g. display accepted formats
+     * }
+     * ```
+     *
+     * @throws FileSizeException     When the file exceeds the size limit.
+     * @throws FileMimeTypeException When the MIME type is not allowed.
+     */
+    public function validate(): void
+    {
+        if (!$this->isValidSize()) {
+            $args = [$this->size(), $this->max_size];
+            if ($this->size_message !== null) {
+                $args[] = $this->size_message;
+            }
+            throw new FileSizeException(...$args);
+        }
+
+        if (!$this->isValidMime()) {
+            $args = [$this->mimeType(), $this->allowed_mime];
+            if ($this->mime_message !== null) {
+                $args[] = $this->mime_message;
+            }
+            throw new FileMimeTypeException(...$args);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Persistence
+    // -------------------------------------------------------------------------
+
+    /**
+     * Validates and moves the uploaded file to the given directory.
+     *
+     * @param string      $directory  Destination directory (created if absent).
+     * @param string|null $name       Custom base name without extension.
+     *                                Defaults to a unique token.
+     * @return string                 Final filename (base name only, not full path).
+     *
+     * @throws FileSizeException
+     * @throws FileMimeTypeException
+     * @throws RuntimeException On filesystem errors.
      */
     public function move(string $directory, ?string $name = null): string
     {
         $this->validate();
 
-        if (!is_dir($directory))
-            mkdir($directory, 0775, true);
-
-        $filename = $name !== null
-            ? sanitizeName($name) . '.' . $this->extension()
-            : uniqid('upload_', true) . '.' . $this->extension();
-
-        $path = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $filename;
-
-        if (!move_uploaded_file($this->file['tmp_name'], $path)) {
-            throw new RuntimeException('Failed to move uploaded file.');
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new RuntimeException(sprintf('Directory "%s" could not be created.', $directory));
         }
 
-        return $filename;
+        $basename = $name !== null
+            ? $this->sanitizeName($name) . '.' . $this->extension()
+            : uniqid('upload_', true) . '.' . $this->extension();
+
+        $destination = rtrim($directory, DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . $basename;
+
+        if (!move_uploaded_file($this->file['tmp_name'], $destination)) {
+            throw new RuntimeException(sprintf('Failed to move uploaded file to "%s".', $destination));
+        }
+
+        return $basename;
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Strips characters unsafe in filenames and collapses whitespace to dashes.
+     */
+    private function sanitizeName(string $name): string
+    {
+        $safe = preg_replace('/[\x00\/\\\\]/', '', $name);
+        $safe = preg_replace('/\s+/', '-', trim((string) $safe));
+        return $safe !== '' ? $safe : 'file';
     }
 }
