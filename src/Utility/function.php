@@ -1,8 +1,5 @@
 <?php
 
-use HTMLPurifier;
-use HTMLPurifier_Config;
-
 /**
  * Cleans and sanitizes a string input.
  * @param string $s The string to be cleaned.
