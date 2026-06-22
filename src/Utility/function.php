@@ -1,5 +1,8 @@
 <?php
 
+use HTMLPurifier;
+use HTMLPurifier_Config;
+
 /**
  * Cleans and sanitizes a string input.
  * @param string $s The string to be cleaned.
@@ -69,4 +72,146 @@ function sanitizeName(string|null $name, string $replace = '_'): ?string
         return null;
     $name = preg_replace('/[^a-zA-Z0-9_-]/', $replace, $name);
     return trim($name, $replace);
+}
+
+/**
+ * Whitelist of CSS classes allowed to be persisted, regardless of which
+ * WYSIWYG editor produced the HTML (TinyMCE, CKEditor, Quill, custom
+ * UIEditor, etc.). Any class not in this list is stripped out
+ * (e.g. mce-content-body, ck-widget, ql-editor, ProseMirror, ...).
+ *
+ * @return string[]
+ */
+function getAllowedHtmlClasses(): array
+{
+    return [
+        'ui-editor-content',
+        'h1', 'h2', 'h3', 'h4', 'h5',
+        'p', 'blockquote', 'ul', 'ol', 'a',
+        'leading-relaxed', 'font-bold', 'italic', 'underline', 'line-through',
+    ];
+}
+
+/**
+ * Builds (once) the configured HTMLPurifier instance.
+ * Cached in a static variable to avoid rebuilding the config
+ * on every call (expensive operation).
+ *
+ * @return HTMLPurifier
+ */
+function getHtmlPurifier(): HTMLPurifier
+{
+    static $purifier = null;
+
+    if ($purifier === null) {
+        $config = HTMLPurifier_Config::createDefault();
+
+        $config->set('HTML.Doctype', 'HTML 4.01 Transitional');
+
+        $config->set(
+            'HTML.Allowed',
+            'h1,h2,h3,h4,h5,h6,p,div,span,blockquote,' .
+            'ul,ol,li,' .
+            'strong,b,em,i,u,s,strike,sub,sup,' .
+            'a[href|title|target|rel],' .
+            'br,hr,' .
+            'table,thead,tbody,tr,th,td,' .
+            'code,pre,' .
+            'img[src|alt|width|height]'
+        );
+
+        $config->set('Attr.EnableID', false);
+        $config->set('Attr.AllowedFrameTargets', ['_blank']);
+
+        $config->set('CSS.AllowedProperties', ''); // pas de style inline
+        $config->set('URI.AllowedSchemes', ['http' => true, 'https' => true, 'mailto' => true]);
+
+        $config->set('HTML.ForbiddenElements', 'script,style,iframe,object,embed,form,input,button');
+        $config->set('HTML.ForbiddenAttributes', '*@on*'); // bloque onclick, onerror, ...
+
+        $config->set('Core.RemoveInvalidImg', true);
+        $config->set('Core.NormalizeNewlines', true);
+
+        // cache des définitions HTMLPurifier (évite de regénérer à chaque requête)
+        $cacheDir = __DIR__ . '/../../storage/htmlpurifier';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0775, true);
+        }
+        $config->set('Cache.SerializerPath', $cacheDir);
+
+        $purifier = new HTMLPurifier($config);
+    }
+
+    return $purifier;
+}
+
+/**
+ * Sanitizes "rich" HTML coming from any WYSIWYG editor:
+ *  1. Strict purification (removes dangerous tags/attributes)
+ *  2. CSS class filtering via whitelist (independent of the source editor)
+ *
+ * @param string|null $html                Raw HTML to sanitize
+ * @param string[]    $extraAllowedClasses  Extra classes to allow for this call
+ *
+ * @return string|null Sanitized HTML, ready to be stored and rendered as-is ({!! !!} / direct echo)
+ */
+function sanitizeHtml(?string $html, array $extraAllowedClasses = []): ?string
+{
+    if ($html === null) {
+        return null;
+    }
+
+    $html = trim($html);
+
+    if ($html === '') {
+        return null;
+    }
+
+    $clean = getHtmlPurifier()->purify($html);
+
+    return filterHtmlClasses($clean, array_merge(getAllowedHtmlClasses(), $extraAllowedClasses));
+}
+
+/**
+ * Walks the DOM and keeps, on the class attribute, only the values
+ * present in the given whitelist.
+ *
+ * @param string   $html    Already-purified HTML
+ * @param string[] $allowed Allowed classes
+ *
+ * @return string
+ */
+function filterHtmlClasses(string $html, array $allowed): string
+{
+    if (trim($html) === '') {
+        return $html;
+    }
+
+    $dom = new \DOMDocument('1.0', 'UTF-8');
+    $wrapped = '<?xml encoding="UTF-8"><div id="__root__">' . $html . '</div>';
+
+    libxml_use_internal_errors(true);
+    $dom->loadHTML($wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+
+    $xpath = new \DOMXPath($dom);
+    foreach ($xpath->query('//*[@class]') as $el) {
+        /** @var \DOMElement $el */
+        $classes = preg_split('/\s+/', trim($el->getAttribute('class')));
+        $kept = array_values(array_intersect($classes, $allowed));
+
+        if (empty($kept)) {
+            $el->removeAttribute('class');
+        } else {
+            $el->setAttribute('class', implode(' ', $kept));
+        }
+    }
+
+    $root = $dom->getElementById('__root__');
+    $innerHtml = '';
+    foreach ($root->childNodes as $child) {
+        $innerHtml .= $dom->saveHTML($child);
+    }
+
+    return trim($innerHtml);
 }
