@@ -391,8 +391,10 @@ $router->redirectUrl('https://example.com');
 |---|---|
 | PHP | ≥ 8.1 |
 | AltoRouter | `composer require altorouter/altorouter` |
-| Twig *(optional)* | `composer require twig/twig` |
-| PSR-3 logger *(optional)* | any PSR-3 compatible package |
+| Twig | `composer require twig/twig` |
+| Symfony Dotenv | `composer require symfony/dotenv` |
+| HTMLPurifier | `composer require ezyang/htmlpurifier"` |
+| PSR-3 logger, HTTP message and factory | any PSR-3 compatible package |
 
 ---
 

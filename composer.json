@@ -1,6 +1,6 @@
 {
     "name": "sethrensei/ren-router",
-    "description": "Secure lightweight PHP router with RBAC, CSRF and HTTP error handling",
+    "description": "PHP micro-router with RBAC, Twig support, URL extension spoofing and centralized HTTP exception handling",
     "require": {
         "altorouter/altorouter": "^2.0",
         "psr/log": "^3.0",
