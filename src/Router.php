@@ -488,7 +488,8 @@ final class Router
      */
     private function dispatchCallable(callable $handler, array $params): void
     {
-        $result = $handler($this, $params);
+        $args = $this->resolveCallableArgs($handler, $params);
+        $result = $handler(...$args);
 
         if ($result instanceof ResponseInterface) {
             echo (string) $result->getBody();
@@ -523,6 +524,56 @@ final class Router
             echo (string) $result->getBody();
         } elseif (is_string($result)) {
             echo $result;
+        }
+    }
+
+    /**
+     * Resolves the argument list to pass to a callable handler.
+     *
+     * Rules (first parameter of the callable drives the decision):
+     *
+     *   1. No parameters            → []
+     *   2. First param type = Router → [$this, $params]   (closure / static callback)
+     *   3. First param type = array  → [$params]           (controller method, Router already injected)
+     *   4. Untyped / other           → [$params]           (safe default: just params)
+     *
+     * @param callable $handler
+     * @param array    $params  Route parameters from AltoRouter
+     * @return array            Arguments to spread into $handler(...$args)
+     */
+    private function resolveCallableArgs(callable $handler, array $params): array
+    {
+        try {
+            if (is_array($handler)) {
+                $ref = new \ReflectionMethod($handler[0], $handler[1]);
+            } elseif (is_object($handler) && !($handler instanceof \Closure)) {
+                $ref = new \ReflectionMethod($handler, '__invoke');
+            } else {
+                $ref = new \ReflectionFunction(\Closure::fromCallable($handler));
+            }
+
+            $refParams = $ref->getParameters();
+
+            if (empty($refParams)) {
+                return [];
+            }
+
+            $firstType = $refParams[0]->getType();
+            $firstName = $firstType instanceof \ReflectionNamedType
+                ? $firstType->getName()
+                : null;
+
+            // Explicit Router as first arg → pass Router + params (closure style)
+            if ($firstName === self::class || $firstName === Router::class) {
+                return [$this, $params];
+            }
+
+            // array or untyped → params only (controller method style)
+            return [$params];
+
+        } catch (\ReflectionException) {
+            // Fallback: params only — avoids crashing on edge-case callables
+            return [$params];
         }
     }
 
